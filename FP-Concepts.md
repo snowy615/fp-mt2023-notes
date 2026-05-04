@@ -6,22 +6,26 @@
 ## Table of Contents
 1. [Types and Function Application](#1-types-and-function-application)
 2. [Lists and List Comprehensions](#2-lists-and-list-comprehensions)
-3. [Pattern Matching and Data Types](#3-pattern-matching-and-data-types)
-4. [Strictness, Laziness, and Bottom](#4-strictness-laziness-and-bottom)
-5. [Higher-Order Functions](#5-higher-order-functions)
-6. [Fold (foldr)](#6-fold-foldr)
-7. [Unfold](#7-unfold)
-8. [Fold Fusion](#8-fold-fusion)
-9. [Left Fold (loop / foldl)](#9-left-fold-loop--foldl)
-10. [Scan](#10-scan)
-11. [Proof by Induction](#11-proof-by-induction)
-12. [Types and Trees](#12-types-and-trees)
-13. [Rose Trees and Bush Trees](#13-rose-trees-and-bush-trees)
-14. [Functor and fmap](#14-functor-and-fmap)
-15. [Efficiency: Accumulator Pattern](#15-efficiency-accumulator-pattern)
-16. [Sorting Algorithms as Folds and Unfolds](#16-sorting-algorithms-as-folds-and-unfolds)
-17. [Dynamic Programming and Tabulation](#17-dynamic-programming-and-tabulation)
-18. [Key Laws and Identities Cheatsheet](#18-key-laws-and-identities-cheatsheet)
+3. [Standard List Functions in Detail](#3-standard-list-functions-in-detail)
+4. [Pattern Matching and Data Types](#4-pattern-matching-and-data-types)
+5. [Maybe — Safe Optional Values](#5-maybe--safe-optional-values)
+6. [Either — Error Handling and Choice](#6-either--error-handling-and-choice)
+7. [Strictness, Laziness, and Bottom](#7-strictness-laziness-and-bottom)
+8. [Higher-Order Functions](#8-higher-order-functions)
+9. [Fold (foldr) — Every Application](#9-fold-foldr--every-application)
+10. [Unfold — Every Application](#10-unfold--every-application)
+11. [Fold Fusion](#11-fold-fusion)
+12. [Left Fold (loop / foldl)](#12-left-fold-loop--foldl)
+13. [Scan](#13-scan)
+14. [Proof by Induction](#14-proof-by-induction)
+15. [Types and Trees](#15-types-and-trees)
+16. [Rose Trees and Bush Trees](#16-rose-trees-and-bush-trees)
+17. [Functor and fmap](#17-functor-and-fmap)
+18. [Efficiency: Accumulator Pattern](#18-efficiency-accumulator-pattern)
+19. [Sorting Algorithms — Full Detail](#19-sorting-algorithms--full-detail)
+20. [Sudoku: Standard Functions in Practice](#20-sudoku-standard-functions-in-practice)
+21. [Dynamic Programming and Tabulation](#21-dynamic-programming-and-tabulation)
+22. [Key Laws and Identities Cheatsheet](#22-key-laws-and-identities-cheatsheet)
 
 ---
 
@@ -41,7 +45,8 @@ logBase :: Float -> (Float -> Float)   -- curried: logBase 10 :: Float -> Float
 
 ### Currying
 Every multi-argument function is really a chain of single-argument functions.  
-`logBase 10` is a perfectly good value of type `Float -> Float`.
+`logBase 10` is a perfectly good value of type `Float -> Float`.  
+Partial application is free: `map (2*)` applies `(2*)` to every element.
 
 ### Composition
 ```haskell
@@ -50,6 +55,15 @@ Every multi-argument function is really a chain of single-argument functions.
 ```
 Composition is **associative**: `f . (g . h) = (f . g) . h`.  
 The identity function `id x = x` satisfies `f . id = id . f = f`.
+
+### Sections
+An infix operator applied to one argument is a **section**:
+```haskell
+(2*)    -- = \x -> 2 * x
+(+3)    -- = \x -> x + 3
+(`div` 10) -- = \x -> x `div` 10
+(10 `div`) -- = \x -> 10 `div` x
+```
 
 ---
 
@@ -61,6 +75,7 @@ A list of type `[T]` is a sequence of elements of type `T`.
 [3, 1, 4, 1, 5]  :: [Int]
 ['a'..'z']        :: [Char]   -- = "abcdefghijklmnopqrstuvwxyz"
 [1..10]           :: [Int]    -- [1,2,3,4,5,6,7,8,9,10]
+[2,4..12]         :: [Int]    -- [2,4,6,8,10,12]
 [[1],[2,3],[4,5,6]] :: [[Int]]
 ```
 
@@ -69,31 +84,400 @@ A list of type `[T]` is a sequence of elements of type `T`.
 map f xs    = [ f x | x <- xs ]
 filter p xs = [ x   | x <- xs, p x ]
 concat xss  = [ x   | xs <- xss, x <- xs ]
-```
-Parts after `|`: generators (`x <- xs`) introduce variables; boolean expressions are guards.
 
-### Key List Functions
+-- Multiple generators = nested loops:
+pairs = [ (x,y) | x <- [1..3], y <- [1..3] ]
+-- = [(1,1),(1,2),(1,3),(2,1),(2,2),(2,3),(3,1),(3,2),(3,3)]
+
+-- Guard filters combinations:
+pythagorean = [ (a,b,c) | c <- [1..100], b <- [1..c], a <- [1..b],
+                           a^2 + b^2 == c^2 ]
+```
+
+Parts after `|`: generators (`x <- xs`) introduce variables; boolean guards filter.
+
+### Operators on Lists
 ```haskell
-null    :: [a] -> Bool
-head    :: [a] -> a           -- partial: undefined on []
-tail    :: [a] -> [a]         -- partial: undefined on []
-last    :: [a] -> a
-(++)    :: [a] -> [a] -> [a]  -- concatenation, cost proportional to length of left arg
-length  :: [a] -> Int
-reverse :: [a] -> [a]
-take    :: Int -> [a] -> [a]
-drop    :: Int -> [a] -> [a]
-zip     :: [a] -> [b] -> [(a,b)]   -- stops at shorter list
-zipWith :: (a -> b -> c) -> [a] -> [b] -> [c]
-span    :: (a -> Bool) -> [a] -> ([a],[a])   -- = (takeWhile p xs, dropWhile p xs)
-splitAt :: Int -> [a] -> ([a],[a])           -- = (take n xs, drop n xs)
-group   :: Eq a => [a] -> [[a]]   -- maximal runs of equal elements
-sort    :: Ord a => [a] -> [a]
+(:)   :: a -> [a] -> [a]       -- cons: prepend element
+(++)  :: [a] -> [a] -> [a]     -- append: cost = O(length left arg)
+(!!)  :: [a] -> Int -> a       -- index: xs !! 0 = head xs
 ```
 
 ---
 
-## 3. Pattern Matching and Data Types
+## 3. Standard List Functions in Detail
+
+### map
+```haskell
+map :: (a -> b) -> [a] -> [b]
+map f []     = []
+map f (x:xs) = f x : map f xs
+```
+
+**Examples:**
+```haskell
+map (*2)      [1,2,3]     = [2,4,6]
+map show      [1,2,3]     = ["1","2","3"]
+map null      [[],[1],[]]  = [True,False,True]
+map (map (+1)) [[1,2],[3]] = [[2,3],[4]]      -- map of map
+map fst       [(1,'a'),(2,'b')] = [1,2]
+map reverse   ["abc","de"] = ["cba","ed"]
+```
+
+**As a fold:**
+```haskell
+map f = fold ((:) . f) []
+-- i.e. fold (\x ys -> f x : ys) []
+```
+
+**Laws:**
+```
+map id      = id
+map f . map g   = map (f . g)       -- fusion
+map f (xs ++ ys) = map f xs ++ map f ys
+```
+
+**Parametricity ("theorem for free"):**  
+For any `f :: a -> b` and any polymorphic function `fun :: [a] -> [a]`:
+```
+map f . fun  =  fun . map f
+```
+This holds for `reverse`, `tail`, `init`, `tails`, `inits`, etc.
+
+---
+
+### filter
+```haskell
+filter :: (a -> Bool) -> [a] -> [a]
+filter p []     = []
+filter p (x:xs) | p x       = x : filter p xs
+                | otherwise = filter p xs
+```
+
+**Examples:**
+```haskell
+filter even    [1..10]      = [2,4,6,8,10]
+filter (>3)    [1..5]       = [4,5]
+filter null    [[],[1],[]]  = [[]]
+filter isUpper "Hello World" = "HW"
+filter (not . null) [[],[1],[2,3]] = [[1],[2,3]]
+```
+
+**As a fold:**
+```haskell
+filter p = fold (\x ys -> if p x then x:ys else ys) []
+```
+
+**Laws:**
+```
+filter p . filter q = filter (\x -> p x && q x)
+filter p . map f    = map f . filter (p . f)   -- only if injective
+length (filter p xs) + length (filter (not . p) xs) = length xs
+```
+
+**With list comprehension:**
+```haskell
+filter p xs = [x | x <- xs, p x]
+```
+
+---
+
+### concat
+```haskell
+concat :: [[a]] -> [a]
+concat []       = []
+concat (xs:xss) = xs ++ concat xss
+```
+
+**Examples:**
+```haskell
+concat [[1,2],[3],[4,5,6]] = [1,2,3,4,5,6]
+concat ["Hello"," ","World"] = "Hello World"
+concat (map (\x -> [x,x]) [1,2,3]) = [1,1,2,2,3,3]
+concat [[]]    = []
+concat []      = []
+```
+
+**As a fold:**
+```haskell
+concat = fold (++) []
+```
+
+**concatMap** (= concat . map):
+```haskell
+concatMap f = concat . map f
+           = fold ((\x ys -> f x ++ ys)) []
+-- Example:
+concatMap (\x -> [x, -x]) [1,2,3] = [1,-1,2,-2,3,-3]
+```
+
+---
+
+### take and drop
+```haskell
+take :: Int -> [a] -> [a]
+take 0 _      = []
+take _ []     = []
+take n (x:xs) = x : take (n-1) xs
+
+drop :: Int -> [a] -> [a]
+drop 0 xs     = xs
+drop _ []     = []
+drop n (_:xs) = drop (n-1) xs
+```
+
+**Examples:**
+```haskell
+take 3 [1..10]        = [1,2,3]
+take 0 [1..10]        = []
+take 5 [1,2]          = [1,2]       -- stops at end of list
+take 3 (repeat 'x')   = "xxx"       -- works on infinite lists!
+drop 3 [1..6]         = [4,5,6]
+drop 0 [1,2,3]        = [1,2,3]
+drop 10 [1,2,3]       = []
+```
+
+**Together:**
+```haskell
+take n xs ++ drop n xs = xs    -- fundamental identity
+splitAt n xs = (take n xs, drop n xs)
+```
+
+**take as unfold:**
+```haskell
+take = unfold (\(n,xs) -> n==0 || null xs)
+               (\(n,xs) -> head xs)
+               (\(n,xs) -> (n-1, tail xs))
+```
+
+---
+
+### takeWhile and dropWhile
+```haskell
+takeWhile :: (a -> Bool) -> [a] -> [a]
+takeWhile p []     = []
+takeWhile p (x:xs) | p x       = x : takeWhile p xs
+                   | otherwise = []
+
+dropWhile :: (a -> Bool) -> [a] -> [a]
+dropWhile p []     = []
+dropWhile p (x:xs) | p x       = dropWhile p xs
+                   | otherwise = x:xs
+```
+
+**Examples:**
+```haskell
+takeWhile (<4)  [1..7]       = [1,2,3]
+takeWhile even  [2,4,6,1,8]  = [2,4,6]    -- stops at first odd
+takeWhile (const True) [1..] = [1,2,3,...]  -- infinite!
+takeWhile null  [[],[],[1]]  = [[],[]]
+
+dropWhile (<4)  [1..7]       = [4,5,6,7]
+dropWhile even  [2,4,5,6]    = [5,6]
+dropWhile (>0)  [-1,2,3]     = [-1,2,3]   -- predicate fails immediately
+```
+
+**Relationship:**
+```haskell
+takeWhile p xs ++ dropWhile p xs = xs
+span p xs = (takeWhile p xs, dropWhile p xs)
+```
+
+---
+
+### span and splitAt
+```haskell
+span :: (a -> Bool) -> [a] -> ([a],[a])
+span p xs = (takeWhile p xs, dropWhile p xs)
+
+splitAt :: Int -> [a] -> ([a],[a])
+splitAt n xs = (take n xs, drop n xs)
+```
+
+**Examples:**
+```haskell
+span (<4)     [1,2,3,4,5] = ([1,2,3],[4,5])
+span even     [2,4,1,6]   = ([2,4],[1,6])
+span (const False) [1,2]  = ([],[1,2])
+span (const True)  [1,2]  = ([1,2],[])
+
+splitAt 2 [1..5]  = ([1,2],[3,4,5])
+splitAt 0 [1..5]  = ([],[1,2,3,4,5])
+splitAt 9 [1..5]  = ([1,2,3,4,5],[])
+```
+
+**Use in algorithms:**
+```haskell
+-- Quicksort uses span-like partition:
+partition p xs = (filter p xs, filter (not . p) xs)
+
+-- Sudoku's 'by' uses splitAt to chunk a list:
+by :: Int -> [a] -> [[a]]
+by n [] = []
+by n xs = take n xs : by n (drop n xs)
+-- = unfold null (take n) (drop n)
+```
+
+---
+
+### zip and zipWith
+```haskell
+zip :: [a] -> [b] -> [(a,b)]
+zip (x:xs) (y:ys) = (x,y) : zip xs ys
+zip _      _      = []
+
+zipWith :: (a -> b -> c) -> [a] -> [b] -> [c]
+zipWith f (x:xs) (y:ys) = f x y : zipWith f xs ys
+zipWith _ _      _      = []
+
+-- zip = zipWith (,)
+```
+
+**Examples:**
+```haskell
+zip [1,2,3] "abc"         = [(1,'a'),(2,'b'),(3,'c')]
+zip [1..] "hello"         = [(1,'h'),(2,'e'),(3,'l'),(4,'l'),(5,'o')]
+zip [1,2] [10,20,30]      = [(1,10),(2,20)]    -- stops at shorter
+
+zipWith (+)  [1,2,3] [10,20,30] = [11,22,33]
+zipWith (*)  [1..5]  [1..5]     = [1,4,9,16,25]
+zipWith (:)  [1,2,3] [[],[],[]] = [[1],[2],[3]]
+zipWith max  [1,5,3] [4,2,6]   = [4,5,6]
+```
+
+**Matrix transpose via zipWith:**
+```haskell
+-- Transpose: turn rows into columns
+transpose :: [[a]] -> [[a]]
+transpose []       = []
+transpose (xs:xss) = zipWith (:) xs (transpose xss)
+-- or simply: transpose = foldr (zipWith (:)) (repeat [])
+
+-- Example:
+transpose [[1,2,3],[4,5,6]] = [[1,4],[2,5],[3,6]]
+```
+This is exactly how `cols` works in the Sudoku solver.
+
+**unzip:**
+```haskell
+unzip :: [(a,b)] -> ([a],[b])
+unzip = foldr (\(x,y) (xs,ys) -> (x:xs, y:ys)) ([],[])
+```
+
+---
+
+### replicate, repeat, iterate, cycle
+```haskell
+replicate :: Int -> a -> [a]
+replicate n x = take n (repeat x)
+
+repeat :: a -> [a]
+repeat x = x : repeat x   -- infinite list
+
+iterate :: (a -> a) -> a -> [a]
+iterate f x = x : iterate f (f x)   -- x, f x, f(f x), ...
+
+cycle :: [a] -> [a]
+cycle xs = xs ++ cycle xs   -- infinite repetition of xs
+```
+
+**Examples:**
+```haskell
+replicate 3 'a'      = "aaa"
+replicate 0 True     = []
+take 5 (repeat 0)    = [0,0,0,0,0]
+take 6 (iterate (*2) 1) = [1,2,4,8,16,32]
+take 5 (iterate (+3) 0) = [0,3,6,9,12]
+take 7 (cycle [1,2,3])  = [1,2,3,1,2,3,1]
+```
+
+**iterate as unfold:**
+```haskell
+iterate f = unfold (const False) id f
+```
+
+---
+
+### group and sort
+```haskell
+group :: Eq a => [a] -> [[a]]
+-- maximal runs of equal adjacent elements
+group []     = []
+group (x:xs) = let (same, rest) = span (== x) xs
+               in (x:same) : group rest
+
+sort :: Ord a => [a] -> [a]   -- from Data.List
+```
+
+**Examples:**
+```haskell
+group [1,1,2,3,3,3,1] = [[1,1],[2],[3,3,3],[1]]
+group "Mississippi"   = ["M","i","ss","i","ss","i","pp","i"]
+group [1,2,3]         = [[1],[2],[3]]
+
+sort [3,1,4,1,5,9] = [1,1,3,4,5,9]
+sort "functional"  = "aacfilnnotu"
+```
+
+**Frequency count using group . sort:**
+```haskell
+frequencies :: Ord a => [a] -> [(a,Int)]
+frequencies = map (\xs -> (head xs, length xs)) . group . sort
+
+-- most common word example from lecture 01:
+mostCommon :: Ord a => [a] -> a
+mostCommon = head . last . sortBy (comparing length) . group . sort
+```
+
+---
+
+### head, tail, last, init, (!!)
+```haskell
+head :: [a] -> a      -- partial! undefined on []
+tail :: [a] -> [a]    -- partial! undefined on []
+last :: [a] -> a      -- partial! undefined on []
+init :: [a] -> [a]    -- partial! undefined on []
+(!!) :: [a] -> Int -> a  -- partial! undefined if index out of range
+```
+
+**Safe alternatives via Maybe:**
+```haskell
+safeHead :: [a] -> Maybe a
+safeHead []    = Nothing
+safeHead (x:_) = Just x
+
+safeTail :: [a] -> Maybe [a]
+safeTail []     = Nothing
+safeTail (_:xs) = Just xs
+
+safeIndex :: [a] -> Int -> Maybe a
+safeIndex []     _ = Nothing
+safeIndex (x:_)  0 = Just x
+safeIndex (_:xs) n = safeIndex xs (n-1)
+```
+
+---
+
+### null, length, reverse, sum, product
+```haskell
+null   :: [a] -> Bool
+null []    = True
+null (_:_) = False
+
+length :: [a] -> Int
+length = fold (const (1+)) 0   -- = fold (\_ n -> n+1) 0
+
+reverse :: [a] -> [a]
+reverse = fold (\x ys -> ys ++ [x]) []  -- naive O(n²)
+-- Efficient: loop (flip (:)) []         -- O(n)
+
+sum     = fold (+) 0
+product = fold (*) 1
+```
+
+---
+
+## 4. Pattern Matching and Data Types
 
 New types are introduced by `data` declarations. Functions are defined by **pattern matching on constructors**.
 
@@ -105,12 +489,6 @@ data Either a b = Left a | Right b
 not :: Bool -> Bool
 not False = True
 not True  = False
-
--- Either's deconstructor (= its fold, since Either is not recursive)
-either :: (a -> c) -> (b -> c) -> Either a b -> c
-either left right (Left x)  = left x
-either left right (Right y) = right y
--- Note: either Left Right = id
 ```
 
 ### Recursive Data Types
@@ -121,9 +499,37 @@ data Nat    = Zero | Succ Nat
 
 Functions on recursive types are naturally defined by recursion:
 ```haskell
-f :: List a -> ...
-f Nil        = ...
-f (Cons x xs) = ... x ... (f xs) ...
+f :: [a] -> ...
+f []     = ...          -- base case
+f (x:xs) = ... x ... (f xs) ...   -- recursive case
+```
+
+### Guards, where, let
+```haskell
+abs x | x < 0    = -x
+      | otherwise = x
+
+-- where: local definitions, in scope for all guards
+classify x | x < 0    = "negative"
+           | x > 0    = "positive"
+           | otherwise = "zero"
+  where -- no definitions here in this example
+
+-- where vs let:
+f x = let y = x + 1    -- let is an expression
+      in y * y
+
+g x = y * y            -- where is a declaration
+  where y = x + 1
+```
+
+### Offside Rule
+In Haskell, layout matters. Definitions at the same indentation level are in the same block.
+
+```haskell
+-- These two are equivalent:
+f x = g x             f x = g x
+  where g y = y + 1   where { g y = y + 1 }
 ```
 
 ### Record Syntax and newtype
@@ -136,11 +542,219 @@ newtype Value a = Value a   -- strict wrapper; zero runtime cost
 ```haskell
 type String = [Char]
 type Word   = [Char]
+type Matrix a = [[a]]
 ```
 
 ---
 
-## 4. Strictness, Laziness, and Bottom
+## 5. Maybe — Safe Optional Values
+
+`Maybe a` represents a computation that may fail to return a value.
+
+```haskell
+data Maybe a = Nothing | Just a
+
+-- The deconstructor (= fold for Maybe):
+maybe :: b -> (a -> b) -> Maybe a -> b
+maybe nothing just Nothing  = nothing
+maybe nothing just (Just x) = just x
+```
+
+### Constructors and Pattern Matching
+```haskell
+safeHead :: [a] -> Maybe a
+safeHead []    = Nothing
+safeHead (x:_) = Just x
+
+safeLookup :: Eq k => k -> [(k,v)] -> Maybe v
+safeLookup _ []         = Nothing
+safeLookup k ((k',v):rest)
+  | k == k'   = Just v
+  | otherwise = safeLookup k rest
+
+safeDiv :: Int -> Int -> Maybe Int
+safeDiv _ 0 = Nothing
+safeDiv x y = Just (x `div` y)
+```
+
+### Using `maybe` to extract and transform
+```haskell
+-- maybe default f mx  =  if mx == Nothing then default else f (fromJust mx)
+
+fromMaybe :: a -> Maybe a -> a
+fromMaybe def = maybe def id
+
+withDefault :: Int -> Maybe Int -> Int
+withDefault d = maybe d (*2)   -- double if Just, otherwise use default
+
+-- Examples:
+maybe 0    (*2)   Nothing   = 0
+maybe 0    (*2)   (Just 5)  = 10
+maybe []   (:[]) (Just 'a') = "a"
+fromMaybe  (-1)  Nothing    = -1
+fromMaybe  (-1)  (Just 42)  = 42
+```
+
+### Chaining Maybe computations
+```haskell
+-- Manual chaining with pattern matching:
+safeSqrt :: Double -> Maybe Double
+safeSqrt x | x < 0    = Nothing
+            | otherwise = Just (sqrt x)
+
+safeLog :: Double -> Maybe Double
+safeLog x | x <= 0   = Nothing
+          | otherwise = Just (log x)
+
+-- Chain: compute log of sqrt
+logSqrt :: Double -> Maybe Double
+logSqrt x = case safeSqrt x of
+              Nothing -> Nothing
+              Just y  -> safeLog y
+
+-- Or use >>= (bind) from Monad:
+logSqrt' x = safeSqrt x >>= safeLog
+```
+
+### Maybe as a Functor
+```haskell
+instance Functor Maybe where
+  fmap f Nothing  = Nothing
+  fmap f (Just x) = Just (f x)
+
+-- Applying a function only if the value exists:
+fmap (*2) Nothing  = Nothing
+fmap (*2) (Just 5) = Just 10
+fmap show (Just 42) = Just "42"
+```
+
+### Selectors and Discriminators
+```haskell
+isNothing :: Maybe a -> Bool
+isNothing Nothing = True
+isNothing _       = False
+
+isJust :: Maybe a -> Bool
+isJust = not . isNothing
+
+fromJust :: Maybe a -> a      -- partial! crashes on Nothing
+fromJust (Just x) = x
+```
+
+### Common patterns
+```haskell
+-- Safe first element of each list:
+map safeHead [[1,2],[],[3]] = [Just 1, Nothing, Just 3]
+
+-- Filter out Nothing values:
+catMaybes :: [Maybe a] -> [a]
+catMaybes = concat . map (maybe [] (:[]))
+-- catMaybes [Just 1, Nothing, Just 3] = [1,3]
+
+-- Apply function that may fail to each element:
+mapMaybe :: (a -> Maybe b) -> [a] -> [b]
+mapMaybe f = catMaybes . map f
+```
+
+---
+
+## 6. Either — Error Handling and Choice
+
+`Either a b` represents two possibilities: a `Left a` (typically an error) or a `Right b` (a success value).
+
+```haskell
+data Either a b = Left a | Right b
+
+-- The deconstructor (= fold for Either):
+either :: (a -> c) -> (b -> c) -> Either a b -> c
+either left right (Left x)  = left x
+either left right (Right y) = right y
+-- Note: either Left Right = id   (fundamental identity)
+```
+
+### Left = error / failure, Right = success
+```haskell
+safeDiv :: Int -> Int -> Either String Int
+safeDiv _ 0 = Left "Division by zero"
+safeDiv x y = Right (x `div` y)
+
+safeSqrt :: Double -> Either String Double
+safeSqrt x
+  | x < 0    = Left ("Cannot take sqrt of " ++ show x)
+  | otherwise = Right (sqrt x)
+```
+
+### Using `either` to process results
+```haskell
+-- either f g (Left x)  = f x
+-- either f g (Right y) = g y
+
+either show (*2)  (Left "err")  = "err"    -- applies show to error
+either show (*2)  (Right 5)     = 10       -- applies (*2) to value
+
+-- Process a list of results:
+results :: [Either String Int]
+results = [Right 1, Left "bad", Right 3]
+
+-- Extract only successes:
+rights :: [Either a b] -> [b]
+rights = concat . map (either (const []) (:[]))
+
+-- Extract only errors:
+lefts :: [Either a b] -> [a]
+lefts = concat . map (either (:[]) (const []))
+```
+
+### Either as a Functor
+```haskell
+instance Functor (Either a) where
+  fmap f (Left x)  = Left x     -- errors pass through unchanged
+  fmap f (Right y) = Right (f y)
+
+fmap (*2) (Left "oops") = Left "oops"
+fmap (*2) (Right 5)     = Right 10
+```
+
+### Left and Right as injections
+```haskell
+-- Left :: a -> Either a b    (inject into left)
+-- Right :: b -> Either a b   (inject into right)
+
+-- Tagging elements with their origin:
+tagLeft  xs = map Left  xs   -- :: [a] -> [Either a b]
+tagRight ys = map Right ys   -- :: [b] -> [Either a b]
+
+interleaveTagged :: [a] -> [b] -> [Either a b]
+interleaveTagged xs ys = map Left xs ++ map Right ys
+```
+
+### Selectors and Discriminators
+```haskell
+isLeft :: Either a b -> Bool
+isLeft (Left _) = True
+isLeft _        = False
+
+isRight :: Either a b -> Bool
+isRight = not . isLeft
+
+fromLeft :: Either a b -> a    -- partial
+fromLeft (Left x) = x
+
+fromRight :: Either a b -> b   -- partial
+fromRight (Right y) = y
+```
+
+### Either vs Maybe
+| Concept | `Maybe a` | `Either e a` |
+|---------|-----------|--------------|
+| Success | `Just a` | `Right a` |
+| Failure | `Nothing` | `Left e` |
+| Error info | None | Yes (`e`) |
+| Deconstructor | `maybe def f` | `either errF okF` |
+
+---
+
+## 7. Strictness, Laziness, and Bottom
 
 **Bottom** (⊥) is the value of a non-terminating or erroring computation.
 
@@ -155,9 +769,9 @@ A function `f` is **strict** if `f ⊥ = ⊥`. Pattern matching is strict (it mu
 ### Key strictness facts
 - `(++)` is **strict in its left argument**: `⊥ ++ ys = ⊥`
 - `(++)` is **not strict in its right argument**: `[1,2] ++ ⊥ = 1:2:⊥ ≠ ⊥`
-- `map f` is not strict: `map f ⊥ = ⊥`, but `head (map f (1:⊥)) = f 1`
-- `fold` is strict in the list argument
-- Constructors (`:`, `(,)`, `Just`) are **never strict**
+- `map f` is not strict in elements: `head (map f (1:⊥)) = f 1`
+- `fold` is strict in the list argument (needs to know if list is `[]` or `x:xs`)
+- Constructors (`:`, `(,)`, `Just`) are **never strict**: `Just ⊥ ≠ ⊥`
 
 ### Forcing evaluation (BangPatterns extension)
 ```haskell
@@ -168,35 +782,17 @@ loop' s (!n) (x:xs) = loop' s (s n x) xs
 
 ---
 
-## 5. Higher-Order Functions
-
-### map
-```haskell
-map :: (a -> b) -> [a] -> [b]
-map f []     = []
-map f (x:xs) = f x : map f xs
--- Laws:
--- map id = id
--- map f . map g = map (f . g)
--- map f (xs ++ ys) = map f xs ++ map f ys
-```
-
-### filter
-```haskell
-filter :: (a -> Bool) -> [a] -> [a]
-filter p []     = []
-filter p (x:xs) | p x       = x : rest
-                | otherwise = rest
-  where rest = filter p xs
-```
+## 8. Higher-Order Functions
 
 ### flip and const
 ```haskell
 flip   :: (a -> b -> c) -> (b -> a -> c)
 flip f x y = f y x
+-- flip (:) = \xs x -> x:xs   (useful for revcat = loop (flip (:)) [])
 
 const  :: a -> b -> a
 const x _ = x
+-- const 1 = \_ -> 1   (useful for length = fold (const (1+)) 0)
 ```
 
 ### uncurry and curry
@@ -206,18 +802,32 @@ uncurry f (x,y) = f x y
 
 curry :: ((a,b) -> c) -> a -> b -> c
 curry f x y = f (x,y)
+
+-- uncurry (+) (3,4) = 7
+-- map (uncurry (+)) [(1,2),(3,4)] = [3,7]
 ```
 
-### iterate
+### ($) and (&)
 ```haskell
-iterate :: (a -> a) -> a -> [a]
-iterate f x = x : iterate f (f x)
--- = unfold (const False) id f x
+($) :: (a -> b) -> a -> b
+f $ x = f x     -- low-precedence application; avoids parentheses
+
+-- map ($ 3) [(+1),(+2),(+3)] = [4,5,6]
+-- map ($ xs) [head,last,tail] -- apply multiple functions to one list
+```
+
+### on
+```haskell
+on :: (b -> b -> c) -> (a -> b) -> a -> a -> c
+(f `on` g) x y = f (g x) (g y)
+
+-- sortBy (compare `on` length) ["ab","a","abc"] = ["a","ab","abc"]
+-- groupBy ((==) `on` fst) [(1,'a'),(1,'b'),(2,'c')]
 ```
 
 ---
 
-## 6. Fold (foldr)
+## 9. Fold (foldr) — Every Application
 
 **The fundamental pattern of recursion on lists.**
 
@@ -226,7 +836,7 @@ iterate f x = x : iterate f (f x)
 fold :: (a -> b -> b) -> b -> [a] -> b
 fold cons nil []     = nil
 fold cons nil (x:xs) = cons x (fold cons nil xs)
--- = foldr in standard Haskell (fold = foldr :: (a->b->b) -> b -> [a] -> b)
+-- = foldr in standard Haskell
 ```
 
 `fold c n` replaces each `(:)` with `c` and `[]` with `n`:
@@ -235,28 +845,187 @@ fold cons nil (x:xs) = cons x (fold cons nil xs)
 x1 : x2 : x3 : []    -->    x1 `c` (x2 `c` (x3 `c` n))
 ```
 
-**Note**: `fold (:) [] = id`
+**Fundamental identity:** `fold (:) [] = id`
 
-### Standard functions as folds
-```haskell
-sum     = fold (+) 0
-product = fold (*) 1
-concat  = fold (++) []
-map f   = fold ((:) . f) []       -- or: fold (\x ys -> f x : ys) []
-(++ bs) = fold (:) bs              -- append bs to the right
-```
-
-### How to find the fold for a function
+### How to derive the fold for a function
 Given `f xs = fold cons nil xs`, solve for `cons` and `nil`:
-- `nil`: set `nil = f []` (use the definition of `fold` on `[]`)
-- `cons`: given `cons x (fold cons nil xs) = f (x:xs)`, substitute `fold cons nil xs` by `f xs` (for a smaller argument) to find `cons x ys = ...`
+1. **nil**: `nil = f []` — evaluate `f` on the empty list
+2. **cons**: from `cons x (f xs) = f (x:xs)`, substitute `f xs` by some `y` to write `cons x y = ...`
 
-**Example** — showing `map f = fold ((:) . f) []`:
+---
+
+### Comprehensive table of fold applications
+
+| Function | `fold c n` | `c` | `n` |
+|----------|-----------|-----|-----|
+| `id` | `fold (:) []` | `(:)` | `[]` |
+| `(++ ys)` | `fold (:) ys` | `(:)` | `ys` |
+| `sum` | `fold (+) 0` | `(+)` | `0` |
+| `product` | `fold (*) 1` | `(*)` | `1` |
+| `and` | `fold (&&) True` | `(&&)` | `True` |
+| `or` | `fold (||) False` | `(\|\|)` | `False` |
+| `all p` | `fold (\x b -> p x && b) True` | — | `True` |
+| `any p` | `fold (\x b -> p x || b) False` | — | `False` |
+| `length` | `fold (const (1+)) 0` | `\_ n->n+1` | `0` |
+| `concat` | `fold (++) []` | `(++)` | `[]` |
+| `maximum` | `fold1 max` | `max` | first elem |
+| `minimum` | `fold1 min` | `min` | first elem |
+| `map f` | `fold ((:).f) []` | `\x ys->f x:ys` | `[]` |
+| `filter p` | `fold (\x ys -> if p x then x:ys else ys) []` | — | `[]` |
+| `reverse` | `fold (\x ys -> ys++[x]) []` (naive) | — | `[]` |
+| `null` | `fold (\_ _ -> False) True` | `const (const False)` | `True` |
+| `head` | — | not a fold (partial) | — |
+| `isort` | `fold insert []` | `insert` | `[]` |
+| `cp` (cartesian product) | `fold (\xs yss -> [x:ys | x<-xs, ys<-yss]) [[]]` | — | `[[]]` |
+| `cols` (transpose) | `fold (zipWith (:)) (repeat [])` | `zipWith (:)` | `repeat []` |
+
+---
+
+### Each application with explanation
+
+#### sum, product, and, or
+```haskell
+sum     = fold (+) 0         -- 0 is identity for +
+product = fold (*) 1         -- 1 is identity for *
+and     = fold (&&) True     -- True is identity for &&
+or      = fold (||) False    -- False is identity for ||
+
+-- Derivation of sum:
+-- nil  = sum [] = 0
+-- cons x y = sum (x:xs) where y = sum xs = x + y
 ```
-nil  = map f [] = []
-cons x ys = map f (x:xs)     where ys = map f xs (by assumption)
-           = f x : map f xs  = f x : ys = ((:) . f) x ys
+
+#### all and any
+```haskell
+all p = fold (\x b -> p x && b) True
+any p = fold (\x b -> p x || b) False
+
+-- Equivalent to:
+all p xs = and (map p xs) = fold (&&) True (map p xs)
+any p xs = or  (map p xs) = fold (||) False (map p xs)
+
+-- Examples:
+all even [2,4,6] = True
+all even [2,3,6] = False
+any odd  [2,4,5] = True
 ```
+
+#### length
+```haskell
+length = fold (const (1+)) 0
+-- const (1+) x n = (1+) n = n+1, ignores x
+-- Derivation:
+-- nil  = length [] = 0
+-- cons x n = length (x:xs) where n = length xs = 1 + n
+```
+
+#### concat, concatMap
+```haskell
+concat    = fold (++) []
+-- (++) appends each list to the accumulated result
+
+concatMap f = fold (\x ys -> f x ++ ys) []
+-- or: concatMap f = concat . map f
+```
+
+#### map f
+```haskell
+map f = fold ((:) . f) []
+-- i.e. fold (\x ys -> f x : ys) []
+-- Derivation:
+-- nil  = map f [] = []
+-- cons x ys = map f (x:xs) where ys = map f xs
+--           = f x : map f xs = f x : ys = ((:).f) x ys
+```
+
+#### filter p
+```haskell
+filter p = fold (\x ys -> if p x then x:ys else ys) []
+-- Derivation:
+-- nil  = filter p [] = []
+-- cons x ys = filter p (x:xs) where ys = filter p xs
+--           = if p x then x:ys else ys
+```
+
+#### reverse (naive and efficient)
+```haskell
+-- Naive (O(n²)):
+reverse = fold (\x ys -> ys ++ [x]) []
+
+-- Efficient (O(n)) — uses loop (left fold):
+reverse = loop (flip (:)) []
+
+-- Derivation of revcat spec = reverse xs ++ ys:
+-- revcat ys [] = ys
+-- revcat ys (x:xs) = revcat (x:ys) xs
+-- So: reverse xs = revcat [] xs = loop (flip (:)) [] xs
+```
+
+#### null
+```haskell
+null = fold (const (const False)) True
+-- cons x _ = False (a non-empty list is not null)
+-- nil = True
+```
+
+#### isort — insertion sort as fold
+```haskell
+isort :: Ord a => [a] -> [a]
+isort = fold insert []
+  where
+    insert :: Ord a => a -> [a] -> [a]
+    insert x []     = [x]
+    insert x (y:ys) | x <= y    = x : y : ys
+                    | otherwise = y : insert x ys
+-- insert 3 [1,2,4,5] = [1,2,3,4,5]
+-- insert 0 [1,2,3]   = [0,1,2,3]
+```
+
+#### cp — Cartesian product as fold
+```haskell
+-- cp [[1,2],[3,4],[5]] = [[1,3,5],[1,4,5],[2,3,5],[2,4,5]]
+-- cp: produces all ways of picking one element from each list
+
+cp :: [[a]] -> [[a]]
+cp = fold (\xs yss -> [x:ys | x <- xs, ys <- yss]) [[]]
+
+-- Derivation:
+-- nil  = cp [] = [[]]   (one way to pick nothing: the empty combination)
+-- cons xs yss = cp (xs:rest) where yss = cp rest
+--             = [x:ys | x <- xs, ys <- yss]
+
+-- Example step by step:
+-- cp [[1,2],[3,4]] 
+-- = fold (\xs yss -> [x:ys | x<-xs, ys<-yss]) [[]] [[1,2],[3,4]]
+-- = (\[1,2] yss -> [x:ys | x<-[1,2], ys<-yss]) (cp [[3,4]])
+-- = [x:ys | x<-[1,2], ys<-[[3],[4]]]
+-- = [[1,3],[1,4],[2,3],[2,4]]
+```
+The Sudoku solver uses `cp` to expand all possible digit assignments.
+
+#### cols — matrix transpose as fold
+```haskell
+-- cols [[1,2,3],[4,5,6],[7,8,9]] = [[1,4,7],[2,5,8],[3,6,9]]
+
+cols :: [[a]] -> [[a]]
+cols = fold (zipWith (:)) (repeat [])
+
+-- Derivation:
+-- nil = cols [] = repeat []  (infinitely many empty columns)
+-- cons xs yss = cols (xs:rest) where yss = cols rest
+--             = zipWith (:) xs yss
+--             = [x:col | (x,col) <- zip xs yss]
+
+-- Example:
+-- cols [[1,2],[3,4]]
+-- = zipWith (:) [1,2] (cols [[3,4]])
+-- = zipWith (:) [1,2] (zipWith (:) [3,4] (repeat []))
+-- = zipWith (:) [1,2] [[3],[4]]
+-- = [[1,3],[2,4]]
+```
+The Sudoku solver uses `cols` to check column constraints.
+
+---
 
 ### foldBTree
 ```haskell
@@ -266,80 +1035,157 @@ foldBTree :: (a -> b) -> (b -> b -> b) -> BTree a -> b
 foldBTree leaf fork (Leaf x)   = leaf x
 foldBTree leaf fork (Fork l r) = fork (foldBTree leaf fork l)
                                        (foldBTree leaf fork r)
--- size = foldBTree (const 1) (+)
--- flatten = foldBTree (:[]) (++)
+
+size    = foldBTree (const 1) (+)          -- count leaves
+depth   = foldBTree (const 0) (\l r -> 1 + max l r)
+flatten = foldBTree (:[]) (++)             -- list of leaves, left-to-right
+fmapBT f = foldBTree (Leaf . f) Fork      -- map over BTree
 ```
 
 ---
 
-## 7. Unfold
+## 10. Unfold — Every Application
 
 **The dual of fold.** While fold consumes a list by replacing constructors, unfold **produces** a list by repeatedly applying deconstructors.
 
 ### Definition
 ```haskell
 unfold :: (b -> Bool) -> (b -> a) -> (b -> b) -> b -> [a]
-unfold null head tail = rec
-  where rec x | null x    = []
+unfold stop head tail = rec
+  where rec x | stop x    = []
                | otherwise = head x : rec (tail x)
 ```
-Parameters: `null` tests for termination, `head` extracts the next element, `tail` advances the state.
-
-### Example
-```haskell
-unfold (==0) (`mod`10) (`div`10) 123456 = [6,5,4,3,2,1]
-```
+Parameters:
+- `stop`: termination predicate — return `[]` when `True`
+- `head`: extract the next output element from state `x`
+- `tail`: advance the state
 
 ### Relationship to fold
-`unfold null head tail . fold cons nil = id`  
-provided `null nil = True`, `null (cons x y) = False`, `head (cons x y) = x`, `tail (cons x y) = y`.
+`unfold p h t . fold c n = id`  
+provided `p n = True`, `p (c x y) = False`, `h (c x y) = x`, `t (c x y) = y`.
 
-### iterate as unfold
+---
+
+### Comprehensive table of unfold applications
+
+| Function | `unfold stop head tail` | stop | head | tail |
+|----------|------------------------|------|------|------|
+| `iterate f x` | `unfold (const False) id f` | never | `id` | `f` |
+| `take n xs` | `unfold (\(n,xs)->n==0\|\|null xs)` | n=0 or [] | `head . snd` | `(n-1, tail xs)` |
+| `digits n` | `unfold (==0) (`mod`10) (`div`10)` | n=0 | `mod 10` | `div 10` |
+| `ssort xs` | `unfold null minimum deleteMin` | empty | `minimum` | remove min |
+| `by n xs` | `unfold null (take n) (drop n)` | empty | `take n` | `drop n` |
+| `countdown` | `unfold (==0) id (subtract 1)` | 0 | `id` | `-1` |
+
+---
+
+### Each application with explanation
+
+#### iterate f x
 ```haskell
-iterate f = unfold (const False) id f
+iterate f x = x : iterate f (f x)
+           = unfold (const False) id f x
+-- Produces: x, f x, f(f x), f(f(f x)), ...
+-- Examples:
+take 5 (iterate (*2) 1) = [1,2,4,8,16]
+take 4 (iterate reverse "ab") = ["ab","ba","ab","ba"]
+iterate (subtract 1) 10 -- = [10,9,8,7,...,1,0,-1,-2,...]
 ```
 
-### take as unfold
+#### take as unfold
 ```haskell
-take = unfold (\(n,xs) -> n==0 || null xs)
-               (\(n,xs) -> head xs)
-               (\(n,xs) -> (n-1, tail xs))
+take n xs = unfold (\(n,xs) -> n==0 || null xs)
+                   (\(n,xs) -> head xs)
+                   (\(n,xs) -> (n-1, tail xs))
+                   (n, xs)
 ```
 
-### unfoldBTree
+#### digits extraction
+```haskell
+-- Extract decimal digits in reverse order:
+digits :: Int -> [Int]
+digits = unfold (==0) (`mod` 10) (`div` 10)
+-- digits 123 = [3,2,1]   (least significant first)
+-- digits 0   = []
+
+-- Digits in correct order:
+digits' n = reverse (digits n)
+-- digits' 123 = [1,2,3]
+```
+
+#### ssort — selection sort as unfold
+```haskell
+ssort :: Ord a => [a] -> [a]
+ssort = unfold null minimum deleteMin
+  where deleteMin xs = delete (minimum xs) xs
+
+-- Each step: stop if empty, output minimum, remove minimum
+-- ssort [3,1,4,1] = 1 : ssort [3,4,1]
+--                 = 1 : 1 : ssort [3,4]
+--                 = 1 : 1 : 3 : ssort [4]
+--                 = 1 : 1 : 3 : 4 : ssort []
+--                 = [1,1,3,4]
+```
+
+#### by — chunk list into groups of n
+```haskell
+by :: Int -> [a] -> [[a]]
+by n = unfold null (take n) (drop n)
+
+-- by 3 [1..9]  = [[1,2,3],[4,5,6],[7,8,9]]
+-- by 3 [1..10] = [[1,2,3],[4,5,6],[7,8,9],[10]]
+-- by 2 "abcde" = ["ab","cd","e"]
+```
+Used in the Sudoku solver to split the grid into 3×3 boxes.
+
+#### unfoldBTree
 ```haskell
 unfoldBTree :: (b -> Bool) -> (b -> a) -> (b -> b) -> (b -> b) -> b -> BTree a
 unfoldBTree single value left right = rec
   where rec x | single x  = Leaf (value x)
                | otherwise = Fork (rec (left x)) (rec (right x))
 
--- Build a balanced tree from a list:
+-- Build a balanced binary tree from a list:
 build = unfoldBTree (null . tail) head
                     (\xs -> take (length xs `div` 2) xs)
                     (\xs -> drop (length xs `div` 2) xs)
+-- build [1,2,3,4] = Fork (Fork (Leaf 1) (Leaf 2))
+--                        (Fork (Leaf 3) (Leaf 4))
+```
+
+#### countdown
+```haskell
+countdown :: Int -> [Int]
+countdown = unfold (==0) id (subtract 1)
+-- countdown 5 = [5,4,3,2,1]
+
+-- Equivalently: [n, n-1, ..., 1]
+-- = reverse [1..n]
 ```
 
 ---
 
-## 8. Fold Fusion
+## 11. Fold Fusion
 
 **The most powerful law for folds.** Lets you replace a composition `f . fold g a` with a single fold, eliminating intermediate data structures.
 
 ### Statement
-If `f` is strict, `b = f a`, and `h x . f = f . g x` (i.e. `h x (f y) = f (g x y)` for all `x`, `y`), then:
+If `f` is strict, `b = f a`, and `h x (f y) = f (g x y)` for all `x`, `y`, then:
 
 ```
 f . fold g a  =  fold h b
 ```
 
+Or equivalently: `h x . f = f . g x` (the cons-case commutes).
+
 ### Proof sketch (by induction)
-- Base: `(f . fold g a) [] = f a = b = fold h b []` ✓ (since `b = f a`)
-- Step: `(f . fold g a) (x:xs) = f (g x (fold g a xs))`
-  - By IH: `= f (g x (fold g a xs))`
-  - `= (h x . f) (fold g a xs)` (by the commutativity condition)
-  - `= h x ((f . fold g a) xs)` 
-  - `= h x (fold h b xs)` (IH)
-  - `= fold h b (x:xs)` ✓
+- **Base**: `(f . fold g a) [] = f a = b = fold h b []` ✓
+- **Step**: `(f . fold g a) (x:xs)`
+  `= f (g x (fold g a xs))`
+  `= h x (f (fold g a xs))`   (by the commuting condition)
+  `= h x ((f . fold g a) xs)`
+  `= h x (fold h b xs)`       (IH)
+  `= fold h b (x:xs)` ✓
 
 ### Conditions summary
 | Condition | Meaning |
@@ -353,19 +1199,23 @@ Any strict function `f` satisfying `f (x:xs) = h x (f xs)` is a fold:
 ```
 f = f . id = f . fold (:) [] = fold h (f [])
 ```
-(using fusion with `g = (:)`, `a = []`)
 
 ### Example: map f = fold ((:).f) []
-Using fusion on `map f . fold (:) []`:
-- `b = map f [] = []`
-- `h x ys = map f (x:xs)` where `ys = map f xs` = `f x : ys = ((:).f) x ys`
+Using fusion with `g = (:)`, `a = []`, `b = map f [] = []`:
+- Check: `h x (map f xs) = map f (x:xs) = f x : map f xs`
+- So `h x ys = f x : ys = ((:).f) x ys` ✓
+
+### Example: (++ ys) = fold (:) ys
+Using fusion with `g = (:)`, `a = []`, `b = [] ++ ys = ys`:
+- Check: `h x (zs ++ ys) = (x:zs) ++ ys = x:(zs++ys)`
+- So `h = (:)` ✓
 
 ### Example: scan c n = fold h [n]
-(See §10 below)
+(See §13 below)
 
 ---
 
-## 9. Left Fold (loop / foldl)
+## 12. Left Fold (loop / foldl)
 
 ### Definition
 **Right fold** (fold/foldr) is right-associative:
@@ -385,37 +1235,36 @@ loop s n (x:xs) = loop s (s n x) xs
 -- = foldl in standard Haskell
 ```
 
-Alternatively: `loop s n = fold (flip s) n . reverse`
+Alternative characterisation: `loop s n = fold (flip s) n . reverse`
 
 ### When fold = loop
-`fold (⊕) e = loop (⊗) e`  
-when `(⊕)` is right-strict, `e ⊗ x = x ⊕ e`, and there exists `(⊙)` with  
-`a ⊗ (b ⊙ c) = (a ⊗ b) ⊙ c` and `(a ⊙ b) ⊕ c = a ⊙ (b ⊕ c)`.
+`fold (⊕) e = loop (⊗) e` when `(⊕)` is **right-strict, associative** and `e` is a **left unit** for `(⊗) = (⊕)`.
 
-The simple case: when `(⊕) = (⊗) = (⊙)` is **right-strict**, **associative**, and `e` is a **left unit**.
 ```haskell
-sum     = fold (+) 0  = loop (+) 0    -- (+) is associative, 0 is left unit
+sum     = fold (+) 0  = loop (+) 0    -- (+) associative, 0 left unit, right-strict
 product = fold (*) 1  = loop (*) 1
-concat  = fold (++) [] ≠ loop (++) []  -- (++) is NOT associative: xs++⊥ = ⊥ but ⊥++xs = ⊥
+concat  = fold (++) [] ≠ loop (++) []  -- (++) not right-strict
+reverse = loop (flip (:)) []           -- not a fold on its own (O(n²) naive fold)
 ```
 
 ### Space: strict accumulator (loop')
 `loop` builds up a chain of unevaluated thunks. Use `loop'` (with `!`) to force evaluation:
 ```haskell
+loop' :: (b -> a -> b) -> b -> [a] -> b
 loop' s (!n) []     = n
 loop' s (!n) (x:xs) = loop' s (s n x) xs
 -- or use foldl' from Data.List
 ```
+For `sum` on large lists, `loop' (+) 0` avoids stack overflow.
 
 ---
 
-## 10. Scan
+## 13. Scan
 
 ### Specification
 ```haskell
 scan :: (a -> b -> b) -> b -> [a] -> [b]
 scan c n = map (fold c n) . tails
--- where tails xs = all suffix segments of xs in decreasing length order
 ```
 
 ```haskell
@@ -424,35 +1273,51 @@ tails []     = [[]]
 tails (x:xs) = (x:xs) : tails xs
 ```
 
-So `scan c n [x,y,z] = [fold c n [x,y,z], fold c n [y,z], fold c n [z], fold c n []]`  
-= `[x `c` (y `c` (z `c` n)), y `c` (z `c` n), z `c` n, n]`
+So for `scan c n [x,y,z]`:
+```
+= [fold c n [x,y,z], fold c n [y,z], fold c n [z], fold c n []]
+= [x `c` (y `c` (z `c` n)),  y `c` (z `c` n),  z `c` n,  n]
+```
+
+**Example**: `scan (+) 0 [1,2,3] = [6, 5, 3, 0]`  
+(trailing sums: 1+2+3=6, 2+3=5, 3=3, 0)
+
+**Standard Haskell**: `scanr = scan` (right scan); `scanl` is the left variant.
 
 **Naive implementation** is quadratic: ~½n² applications of `c`.
 
 ### Efficient implementation via fold fusion
-Applying fusion to `(map (fold c n)) . tails`:
-
-`tails = fold g [[]]` where `g x yss = (x : head yss) : yss`
-
-Then fuse `map (fold c n)` with this fold:
 ```haskell
+-- Step 1: tails as a fold
+-- tails = fold g [[]] where g x yss = (x : head yss) : yss
+
+-- Step 2: fuse map (fold c n) with the tails fold
 scan c n = fold h [n]
   where h x zs = c x (head zs) : zs
 ```
+
 This is **linear**: n applications of `h`, each calling `c` once.
 
+### Key property
 ```haskell
--- In standard Haskell: scanr = scan
-scan c n = fold h [n] where h x zs = c x (head zs) : zs
--- Equivalently: scan c n xs = fold h [n] xs
+head (scan c n xs) = fold c n xs
+-- The first element of the scan is the fold of the whole list.
 ```
 
-### Key property
-`head (scan c n xs) = fold c n xs`
+### scanl (left scan)
+```haskell
+scanl :: (b -> a -> b) -> b -> [a] -> [b]
+scanl s n xs = map (loop s n) (inits xs)
+  where inits [] = [[]]
+        inits (x:xs) = [] : map (x:) (inits xs)
+
+-- scanl (+) 0 [1,2,3] = [0, 1, 3, 6]
+-- (running totals from left)
+```
 
 ---
 
-## 11. Proof by Induction
+## 14. Proof by Induction
 
 ### Induction on natural numbers
 To prove `P(n)` for all natural numbers `n`, prove:
@@ -493,9 +1358,28 @@ Useful for proving equalities involving infinite lists: reduce to proving `take 
   expression3
 ```
 
+### Example proof: map f . map g = map (f . g)
+By induction on xs:
+
+**Base** (xs = []):
+```
+(map f . map g) [] = map f (map g []) = map f [] = []
+map (f . g)     [] = []                             ✓
+```
+
+**Step** (xs = y:ys), assuming `(map f . map g) ys = map (f.g) ys`:
+```
+(map f . map g) (y:ys)
+= map f (g y : map g ys)
+= f (g y) : map f (map g ys)
+= (f . g) y : (map f . map g) ys    (definition of (.))
+= (f . g) y : map (f . g) ys        (IH)
+= map (f . g) (y:ys)                ✓
+```
+
 ---
 
-## 12. Types and Trees
+## 15. Types and Trees
 
 ### Algebraic data types
 Every `data` declaration introduces:
@@ -511,20 +1395,14 @@ right (Right y) = y
 -- Discriminator:
 isLeft (Left _)  = True
 isLeft (Right _) = False
--- Single fold-like deconstructor: either (defined above)
-```
-
-### Maybe
-```haskell
-data Maybe a = Nothing | Just a
-
-maybe :: b -> (a -> b) -> Maybe a -> b
-maybe nothing just Nothing  = nothing
-maybe nothing just (Just x) = just x
+-- Fold-like deconstructor:
+either f g (Left x)  = f x
+either f g (Right y) = g y
+-- Identity: either Left Right = id
 ```
 
 ### Polynomial types (sums of products)
-Types built from `data` are **sums** (alternatives `|`) of **products** (tuples of constructors).  
+Types built from `data` are **sums** (alternatives `|`) of **products** (tuples/fields).  
 Constructors are **never strict**: `Pair ⊥ ⊥ ≠ ⊥`.  
 Pattern matching on constructors **is** strict.
 
@@ -548,22 +1426,23 @@ flatten = foldBTree (:[]) (++)
 
 size :: BTree a -> Int
 size = foldBTree (const 1) (+)
+
+depth :: BTree a -> Int
+depth = foldBTree (const 0) (\l r -> 1 + max l r)
 ```
 
 Efficient flatten (linear, avoiding quadratic `++`):
 ```haskell
 flatcat :: BTree a -> [a] -> [a]
-flatcat t ys = flatten t ++ ys     -- specification
--- Derive by calculation:
 flatcat (Leaf x)   ys = x : ys
 flatcat (Fork l r) ys = flatcat l (flatcat r ys)
--- So: flatcat = foldBTree (:) (flip (.))
--- And: flatten t = flatcat t []
+-- flatcat = foldBTree (:) (flip (.))
+-- flatten t = flatcat t []
 ```
 
 ---
 
-## 13. Rose Trees and Bush Trees
+## 16. Rose Trees and Bush Trees
 
 ### Rose Tree
 A rose tree has nodes with **any number of children** (a list of subtrees).
@@ -584,12 +1463,16 @@ instance Functor RTree where
 ```haskell
 foldRTree :: (a -> [b] -> b) -> RTree a -> b
 foldRTree node (RTree x ts) = node x (map (foldRTree node) ts)
-```
 
-**Use case**: Tries (prefix trees) are a special form of rose tree used for efficient tabulation:
-```haskell
-data Trie a b = Trie b (Mapping a (Trie a b))
-type Copse a b = Mapping a (Trie a b)
+-- Examples:
+sizeRT :: RTree a -> Int
+sizeRT = foldRTree (\_ ns -> 1 + sum ns)
+
+depthRT :: RTree a -> Int
+depthRT = foldRTree (\_ ds -> 1 + maximum (0:ds))
+
+flattenRT :: RTree a -> [a]
+flattenRT = foldRTree (\x xss -> x : concat xss)
 ```
 
 ### Bush Tree
@@ -610,46 +1493,49 @@ foldBush bush (Bush x ts) = bush x (fmap (foldBush bush) ts)
 
 ---
 
-## 14. Functor and fmap
+## 17. Functor and fmap
 
 A **Functor** is a type constructor `f` with a mapping operation that respects identity and composition.
 
 ```haskell
 class Functor f where
   fmap :: (a -> b) -> f a -> f b
--- Laws (not enforced by Haskell, but required):
--- fmap id = id
+-- Laws (required but not checked by Haskell):
+-- fmap id      = id
 -- fmap f . fmap g = fmap (f . g)
 ```
 
 ### Standard instances
 ```haskell
 instance Functor [] where
-  fmap = map
+  fmap = map                     -- fmap on lists is map
 
 instance Functor Maybe where
   fmap f Nothing  = Nothing
   fmap f (Just x) = Just (f x)
+
+instance Functor (Either a) where
+  fmap f (Left x)  = Left x     -- errors pass through
+  fmap f (Right y) = Right (f y)
 
 instance Functor RTree where
   fmap f (RTree a ts) = RTree (f a) (map (fmap f) ts)
 ```
 
 ### map as a special case
-`map` is `fmap` for lists. For any recursive type, once the fold is defined, `fmap` can be derived from it:
+`map` is `fmap` for lists. For any recursive type, `fmap` can be derived from the fold:
 ```haskell
 -- For lists:
 map f = fold ((:) . f) []
 -- For BTree:
-fmap f = foldBTree (Leaf . f) Fork
+fmapBT f = foldBTree (Leaf . f) Fork
+-- For RTree:
+fmapRT f = foldRTree (RTree . f) -- :: (a->b) -> RTree a -> RTree b
 ```
-
-### The general pattern
-For any functor `t`, `fmap (foldBush bush) = fmap` applied to the children, which is why the fold and the functor are interleaved in `foldBush` and `foldRTree`.
 
 ---
 
-## 15. Efficiency: Accumulator Pattern
+## 18. Efficiency: Accumulator Pattern
 
 ### Quadratic reverse (naive)
 ```haskell
@@ -670,7 +1556,7 @@ reverse = loop (flip (:)) []
 
 ### Quadratic tree flatten (naive)
 `flatten (Fork ls rs) = flatten ls ++ flatten rs`  
-A left-skewed tree has O(n log n) or O(n²) cost from repeated `(++)`.
+A left-skewed tree has O(n²) cost from repeated `(++)`.
 
 ### Linear flatten via accumulator
 ```haskell
@@ -678,6 +1564,7 @@ flatcat :: BTree a -> [a] -> [a]     -- spec: flatcat t ys = flatten t ++ ys
 flatcat (Leaf x)   ys = x : ys
 flatcat (Fork l r) ys = flatcat l (flatcat r ys)
 -- Then: flatten t = flatcat t []
+-- flatcat = foldBTree (:) (flip (.))
 ```
 
 ### Fast exponentiation
@@ -687,68 +1574,294 @@ pow x n = if n == 0 then 1 else pow x (n-1) * x
 
 -- O(log n) with accumulator:
 power (*) y x 0        = y
-power (*) y x n | even n = power (*) y (x*x) (n `div` 2)
-                | odd  n = power (*) (x*y) x (n-1)
+power (*) y x n
+  | even n = power (*) y (x*x) (n `div` 2)
+  | odd  n = power (*) (x*y) x (n-1)
 -- Then: pow x n = power (*) 1 x n
 ```
-Works for any associative operation (e.g. matrix multiplication).
+Works for any associative operation (e.g. matrix multiplication for matrix exponentiation).
 
 ---
 
-## 16. Sorting Algorithms as Folds and Unfolds
+## 19. Sorting Algorithms — Full Detail
 
-### Insertion sort (fold)
+### 1. Insertion Sort — a fold
+
+**Idea**: insert each element into the correct position of the already-sorted accumulator.
+
 ```haskell
 isort :: Ord a => [a] -> [a]
 isort = fold insert []
-  where
-    insert x []     = [x]
-    insert x (y:ys) | y >= x    = x : y : ys
-                    | otherwise = y : insert x ys
+
+insert :: Ord a => a -> [a] -> [a]
+insert x []     = [x]
+insert x (y:ys)
+  | x <= y    = x : y : ys    -- x belongs here
+  | otherwise = y : insert x ys
+
+-- Example trace:
+-- isort [3,1,2]
+-- = insert 3 (insert 1 (insert 2 []))
+-- = insert 3 (insert 1 [2])
+-- = insert 3 [1,2]
+-- = [1,2,3]
 ```
 
-### Selection sort (unfold)
+**Complexity:**
+- Best case: O(n) — already sorted
+- Worst/average: O(n²) — each `insert` may scan the whole list
+- Space: O(n)
+
+**Characterisation:** Insertion sort is a **fold** — builds the result incrementally from left to right.
+
+---
+
+### 2. Selection Sort — an unfold
+
+**Idea**: repeatedly extract the minimum element.
+
 ```haskell
 ssort :: Ord a => [a] -> [a]
 ssort = unfold null minimum deleteMin
-  where deleteMin xs = delete (minimum xs) xs
-```
-`ssort` is an unfold: it repeatedly selects the minimum and removes it.
+  where
+    deleteMin xs = delete (minimum xs) xs
 
-### Quicksort (unfold then fold)
+-- delete removes the first occurrence of an element:
+delete :: Eq a => a -> [a] -> [a]
+delete _ []     = []
+delete x (y:ys) | x == y    = ys
+                | otherwise = y : delete x ys
+
+-- Example trace:
+-- ssort [3,1,2]
+-- = 1 : ssort [3,2]
+-- = 1 : 2 : ssort [3]
+-- = 1 : 2 : 3 : ssort []
+-- = [1,2,3]
+```
+
+**Complexity:**
+- Best/Worst/Average: O(n²) — `minimum` and `deleteMin` each traverse the list
+- Space: O(n)
+
+**Characterisation:** Selection sort is an **unfold** — generates the result element by element.
+
+---
+
+### 3. Quicksort — unfold then fold
+
+**Idea**: partition around a pivot, sort each part recursively.
+
 ```haskell
 qsort :: Ord a => [a] -> [a]
 qsort []     = []
-qsort (x:xs) = qsort [y | y <- xs, y < x] ++
-               [y | y <- xs, y == x] ++  -- or x: if no duplicates
-               qsort [y | y <- xs, y > x]
--- Can be expressed as: qsort = flatten . build
--- where build :: Ord a => [a] -> QTree a   (an unfold to a QTree)
--- and   flatten :: QTree a -> [a]           (a fold from a QTree)
+qsort (x:xs) = qsort smaller ++ [x] ++ qsort larger
+  where
+    smaller = filter (< x) xs
+    larger  = filter (> x) xs
+-- Note: this version drops duplicates; include equal with smaller or larger as needed
+
+-- Full version preserving duplicates:
+qsort' []     = []
+qsort' (x:xs) = qsort' [y | y <- xs, y < x]
+             ++ [y | y <- x:xs, y == x]
+             ++ qsort' [y | y <- xs, y > x]
+
+-- Example trace:
+-- qsort [3,1,4,1,5]
+-- pivot=3, smaller=[1,1], larger=[4,5]
+-- = qsort [1,1] ++ [3] ++ qsort [4,5]
+-- = [1,1] ++ [3] ++ [4,5]
+-- = [1,1,3,4,5]
 ```
 
-### Merge sort (unfold then fold)
+**Complexity:**
+- Best/Average: O(n log n) — balanced partitions
+- Worst: O(n²) — already sorted (pivot always min or max)
+- Space: O(log n) average, O(n) worst (stack depth)
+
+**Characterisation:** Quicksort = **unfold** (build a QTree partition) followed by **fold** (flatten QTree in order).
+
+```haskell
+-- As unfold-then-fold:
+data QTree a = QLeaf | QFork (QTree a) a (QTree a)
+
+buildQ :: Ord a => [a] -> QTree a
+buildQ = unfoldQTree null (\(x:_) -> x) (\(x:xs) -> filter (<x) xs) (\(x:xs) -> filter (>x) xs)
+
+flattenQ :: QTree a -> [a]
+flattenQ = foldQTree [] (\l x r -> l ++ [x] ++ r)
+
+qsort = flattenQ . buildQ
+```
+
+---
+
+### 4. Merge Sort — unfold then fold
+
+**Idea**: split in half, sort each half, merge sorted halves.
+
 ```haskell
 msort :: Ord a => [a] -> [a]
 msort []  = []
 msort [x] = [x]
-msort xs  = merge (msort ls) (msort rs) where (ls, rs) = halve xs
+msort xs  = merge (msort ls) (msort rs)
+  where (ls, rs) = halve xs
 
-halve xs  = splitAt (length xs `div` 2) xs
+halve :: [a] -> ([a],[a])
+halve xs = splitAt (length xs `div` 2) xs
 
 merge :: Ord a => [a] -> [a] -> [a]
-merge (x:xs) (y:ys) | x <= y    = x : merge xs (y:ys)
-                    | otherwise = y : merge (x:xs) ys
 merge []     ys     = ys
 merge xs     []     = xs
--- msort = flatten . build
--- where build :: [a] -> MTree a   (an unfold)
--- and   flatten :: Ord a => MTree a -> [a]   (a fold using merge)
+merge (x:xs) (y:ys)
+  | x <= y    = x : merge xs (y:ys)
+  | otherwise = y : merge (x:xs) ys
+
+-- Example trace:
+-- msort [3,1,4,2]
+-- = merge (msort [3,1]) (msort [4,2])
+-- = merge (merge (msort [3]) (msort [1])) (merge (msort [4]) (msort [2]))
+-- = merge (merge [3] [1]) (merge [4] [2])
+-- = merge [1,3] [2,4]
+-- = [1,2,3,4]
+```
+
+**Complexity:**
+- Best/Average/Worst: O(n log n) — always balanced splits
+- Space: O(n) — merge creates a new list
+- Note: `length xs` makes `halve` O(n); can use tortoise-hare to avoid
+
+**Characterisation:** Merge sort = **unfold** (build an MTree of singletons/pairs) followed by **fold** (merge bottom-up).
+
+```haskell
+-- As unfold-then-fold:
+data MTree a = MLeaf a | MFork (MTree a) (MTree a)
+
+buildM :: [a] -> MTree a
+buildM [x] = MLeaf x
+buildM xs  = MFork (buildM ls) (buildM rs) where (ls,rs) = halve xs
+
+flattenM :: Ord a => MTree a -> [a]
+flattenM (MLeaf x)   = [x]
+flattenM (MFork l r) = merge (flattenM l) (flattenM r)
+
+msort = flattenM . buildM
 ```
 
 ---
 
-## 17. Dynamic Programming and Tabulation
+### Complexity Summary
+
+| Algorithm | Best | Average | Worst | Space | Characterisation |
+|-----------|------|---------|-------|-------|-----------------|
+| Insertion sort | O(n) | O(n²) | O(n²) | O(n) | fold |
+| Selection sort | O(n²) | O(n²) | O(n²) | O(n) | unfold |
+| Quicksort | O(n log n) | O(n log n) | O(n²) | O(log n) | unfold then fold |
+| Merge sort | O(n log n) | O(n log n) | O(n log n) | O(n) | unfold then fold |
+
+---
+
+## 20. Sudoku: Standard Functions in Practice
+
+The Sudoku solver from lectures 7–8 is a rich example of applying every standard list function.
+
+### Grid representation
+```haskell
+type Grid  = [[Digit]]
+type Digit = Char
+digits     = ['1'..'9']
+blank      = (== '0')
+```
+
+### cp — Cartesian product (fold)
+```haskell
+cp :: [[a]] -> [[a]]
+cp = fold (\xs yss -> [x:ys | x <- xs, ys <- yss]) [[]]
+
+-- Used to expand all possible digit choices:
+-- expand :: Grid -> [Grid]
+-- expand = cp . map choices
+-- where choices c = if blank c then digits else [c]
+```
+
+### cols — transpose (fold with zipWith)
+```haskell
+cols :: [[a]] -> [[a]]
+cols = fold (zipWith (:)) (repeat [])
+
+-- Used to check column constraints:
+-- valid grid means: all rows ok, all cols ok, all boxes ok
+-- rows = id
+-- cols = transpose
+```
+
+### by — chunking with splitAt (unfold)
+```haskell
+by :: Int -> [a] -> [[a]]
+by n = unfold null (take n) (drop n)
+
+-- Used to split grid into 3×3 boxes:
+-- boxs :: [[a]] -> [[a]]
+-- boxs = map concat . concat . map cols . by 3 . map (by 3)
+-- Explanation:
+--   map (by 3) :: [[a]] -> [[[a]]]   -- split each row into triples
+--   by 3       :: [[[a]]] -> [[[[a]]]] -- group into groups of 3 rows
+--   map cols   :: [[[[a]]]] -> [[[[a]]]] -- transpose each group
+--   concat . map concat -- flatten
+```
+
+### zipWith (:) for column transpose
+```haskell
+-- transpose via fold:
+-- fold (zipWith (:)) (repeat []) [[1,2],[3,4],[5,6]]
+-- = zipWith (:) [1,2] (fold (zipWith (:)) (repeat []) [[3,4],[5,6]])
+-- = zipWith (:) [1,2] (zipWith (:) [3,4] (zipWith (:) [5,6] (repeat [])))
+-- = zipWith (:) [1,2] (zipWith (:) [3,4] [[5],[6]])
+-- = zipWith (:) [1,2] [[3,5],[4,6]]
+-- = [[1,3,5],[2,4,6]]
+```
+
+### filter and map for pruning
+```haskell
+-- Remove choices that are already fixed in a row/col/box:
+remove :: [Digit] -> [Digit] -> [Digit]
+remove fixed cs
+  | length cs == 1 = cs          -- already fixed; don't remove
+  | otherwise      = filter (`notElem` fixed) cs  -- remove singletons
+
+ones :: [[Digit]] -> [Digit]
+ones = concat . filter (\cs -> length cs == 1)    -- extract fixed digits
+
+-- pruneRow: prune a row given its fixed digits
+pruneRow :: [[Digit]] -> [[Digit]]
+pruneRow row = map (remove fixed) row
+  where fixed = ones row
+```
+
+### span / break for search
+```haskell
+-- break p = span (not . p)
+-- Used to find the first unfixed cell and split around it:
+expand1 :: Grid -> [Grid]
+expand1 grid = [rows1 ++ [row1 ++ [c] : row2] ++ rows2 | c <- cs]
+  where
+    (rows1, row:rows2) = break (any ((>1) . length)) grid
+    (row1, cs:row2)    = break ((>1) . length) row
+```
+
+### repeatedly — iterate until stable
+```haskell
+repeatedly :: (a -> a) -> a -> a
+repeatedly f x | f x == x  = x
+               | otherwise = repeatedly f (f x)
+-- Used to apply pruning until no more changes:
+-- repeatedly prune grid
+```
+
+---
+
+## 21. Dynamic Programming and Tabulation
 
 ### Fixed points
 For a recursive function `f`, extract the **kernel** `fK` (the non-recursive body):
@@ -775,6 +1888,8 @@ tabulate kernel = fun
 ```
 Uses Haskell's lazy evaluation: `tab` is an infinite list built once; entries are computed on demand and shared.
 
+**Complexity**: `fibK` with `tabulate` runs in O(n) time and O(n) space — each `fib k` is computed at most once.
+
 ### Association list tabulation
 For functions over lists (e.g. Countdown `results`):
 ```haskell
@@ -800,46 +1915,74 @@ Lookup is O(length of key) instead of O(size of table).
 
 ---
 
-## 18. Key Laws and Identities Cheatsheet
+## 22. Key Laws and Identities Cheatsheet
 
 ### Fold laws
 ```
-fold (:) []            = id
-fold c n (xs ++ ys)   = fold c n xs `op` fold c n ys
-  (when x `op` (y `op` z) = (x 'c' y) `op` z and n `op` x = x)
-map f                  = fold ((:) . f) []
-sum                    = fold (+) 0
-product                = fold (*) 1
-concat                 = fold (++) []
-(++ ys)                = fold (:) ys
+fold (:) []           = id
+fold c n (xs ++ ys)  = fold c n xs `op` fold c n ys
+  (when x `op` (y `op` z) = (x `c` y) `op` z and n `op` x = x)
+map f                 = fold ((:) . f) []
+filter p              = fold (\x ys -> if p x then x:ys else ys) []
+concat                = fold (++) []
+sum                   = fold (+) 0
+product               = fold (*) 1
+length                = fold (const (1+)) 0
+and                   = fold (&&) True
+or                    = fold (||) False
+(++ ys)               = fold (:) ys
+cp                    = fold (\xs yss -> [x:ys | x<-xs, ys<-yss]) [[]]
+cols                  = fold (zipWith (:)) (repeat [])
+isort                 = fold insert []
+```
+
+### Unfold identities
+```
+iterate f             = unfold (const False) id f
+digits n              = unfold (==0) (`mod`10) (`div`10)   n
+by n                  = unfold null (take n) (drop n)
+ssort                 = unfold null minimum deleteMin
 ```
 
 ### Fusion law
 ```
-f strict, b = f a, h x . f = f . g x
+f strict, b = f a, h x (f y) = f (g x y)
 ⟹  f . fold g a  =  fold h b
 ```
 
 ### Scan theorem
 ```
-head (scan c n xs) = fold c n xs
-scan c n           = fold h [n]   where h x zs = c x (head zs) : zs
+head (scan c n xs)  =  fold c n xs
+scan c n            =  fold h [n]   where h x zs = c x (head zs) : zs
 ```
 
 ### fold vs loop
 ```
 fold (+) 0  = loop (+) 0        (+ associative, right-strict, 0 is left unit)
-fold (++) [] ≠ loop (++) []     (++ not associative across ⊥)
+fold (++) [] ≠ loop (++) []     (++ not right-strict)
 reverse      = loop (flip (:)) []
 ```
 
 ### Map laws
 ```
-map id     = id
-map f . map g  = map (f . g)
-map f (xs ++ ys) = map f xs ++ map f ys
-fmap id    = id                          (Functor law)
-fmap f . fmap g = fmap (f . g)           (Functor law)
+map id            = id
+map f . map g     = map (f . g)            -- fusion
+map f (xs ++ ys)  = map f xs ++ map f ys
+fmap id           = id                      (Functor law)
+fmap f . fmap g   = fmap (f . g)            (Functor law)
+```
+
+### Either identity
+```
+either Left Right  = id
+```
+
+### Maybe vs Either
+```
+maybe def f Nothing  = def
+maybe def f (Just x) = f x
+either l r (Left x)  = l x
+either l r (Right y) = r y
 ```
 
 ### Induction schemes summary
@@ -856,13 +1999,22 @@ unfold p h t . fold c n = id
   provided: p n = True, p (c x y) = False, h (c x y) = x, t (c x y) = y
 ```
 
-### Efficiency patterns
-| Problem | Naive | Efficient | Trick |
-|---------|-------|-----------|-------|
-| `reverse` | O(n²) | O(n) | accumulator `revcat`: `loop (flip (:)) []` |
-| `flatten` BTree | O(n log n) | O(n) | accumulator `flatcat`: `foldBTree (:) (flip (.))` |
-| `fib n` | O(2ⁿ) | O(n) | tabulation |
-| `x^n` | O(n) | O(log n) | fast exponentiation with accumulator |
+### Standard function complexity
+| Function | Time | Note |
+|----------|------|------|
+| `map f xs` | O(n) | n = length xs |
+| `filter p xs` | O(n) | |
+| `concat xss` | O(total length) | |
+| `(++) xs ys` | O(length xs) | strict in left arg |
+| `reverse xs` | O(n²) naive, O(n) accumulator | |
+| `sort xs` | O(n log n) | Data.List uses merge sort |
+| `take n xs` | O(min n (length xs)) | works on infinite lists |
+| `zip xs ys` | O(min (length xs) (length ys)) | |
+| `fold f n xs` | O(n) calls to f | |
+| `isort xs` | O(n²) | fold of insert |
+| `ssort xs` | O(n²) | unfold of minimum |
+| `qsort xs` | O(n log n) avg | O(n²) worst |
+| `msort xs` | O(n log n) | always |
 
 ---
 
