@@ -1215,104 +1215,332 @@ Using fusion with `g = (:)`, `a = []`, `b = [] ++ ys = ys`:
 
 ---
 
-## 12. Left Fold (loop / foldl)
+## 12. foldr vs foldl — Left and Right Folds
 
-### Definition
-**Right fold** (fold/foldr) is right-associative:
+### The core difference: where does the bracket go?
+
+Given a list `[x1, x2, x3, x4]` and an operator `⊕` with identity `e`:
+
 ```
-fold (⊕) e [x0, x1, ..., xn] = x0 ⊕ (x1 ⊕ (... ⊕ (xn ⊕ e)...))
+foldr (⊕) e  [x1,x2,x3,x4]  =  x1 ⊕ (x2 ⊕ (x3 ⊕ (x4 ⊕ e)))
+                                          ←  right-associative: works right-to-left
+
+foldl (⊕) e  [x1,x2,x3,x4]  =  ((((e ⊕ x1) ⊕ x2) ⊕ x3) ⊕ x4)
+                                   left-associative: works left-to-right  →
 ```
 
-**Left fold** (loop/foldl) is left-associative:
+The **element type** of the combining function differs:
+```haskell
+foldr :: (a -> b -> b) -> b -> [a] -> b   -- element on the LEFT, accumulator on the RIGHT
+foldl :: (b -> a -> b) -> b -> [a] -> b   -- accumulator on the LEFT, element on the RIGHT
 ```
-loop (⊕) e [x0, x1, ..., xn] = (...((e ⊕ x0) ⊕ x1) ⊕ ... ⊕ xn)
-```
+
+### Definitions
 
 ```haskell
-loop :: (b -> a -> b) -> b -> [a] -> b
-loop s n []     = n
-loop s n (x:xs) = loop s (s n x) xs
--- = foldl in standard Haskell
+-- foldr: the course calls this simply "fold"
+foldr :: (a -> b -> b) -> b -> [a] -> b
+foldr f z []     = z
+foldr f z (x:xs) = f x (foldr f z xs)    -- recurse first, then apply f
+
+-- foldl: the course calls this "loop"
+foldl :: (b -> a -> b) -> b -> [a] -> b
+foldl f z []     = z
+foldl f z (x:xs) = foldl f (f z x) xs   -- apply f immediately, pass result forward
 ```
 
-Alternative characterisation: `loop s n = fold (flip s) n . reverse`
+### Side-by-side concrete trace
 
-### When fold = loop
-`fold (⊕) e = loop (⊗) e` when `(⊕)` is **right-strict, associative** and `e` is a **left unit** for `(⊗) = (⊕)`.
+```
+foldr (-) 0 [1,2,3]
+= 1 - (foldr (-) 0 [2,3])
+= 1 - (2 - (foldr (-) 0 [3]))
+= 1 - (2 - (3 - 0))
+= 1 - (2 - 3)
+= 1 - (-1)
+= 2
 
-```haskell
-sum     = fold (+) 0  = loop (+) 0    -- (+) associative, 0 left unit, right-strict
-product = fold (*) 1  = loop (*) 1
-concat  = fold (++) [] ≠ loop (++) []  -- (++) not right-strict
-reverse = loop (flip (:)) []           -- not a fold on its own (O(n²) naive fold)
+foldl (-) 0 [1,2,3]
+= foldl (-) (0-1) [2,3]
+= foldl (-) (-1) [2,3]
+= foldl (-) ((-1)-2) [3]
+= foldl (-) (-3) [3]
+= (-3) - 3
+= -6
 ```
 
-### Space: strict accumulator (loop')
-`loop` builds up a chain of unevaluated thunks. Use `loop'` (with `!`) to force evaluation:
+The results differ because `-` is not associative.
+
+### When they give the same result
+
+`foldr (⊕) e xs = foldl (⊕) e xs` when `(⊕)` is:
+1. **Associative**: `(a ⊕ b) ⊕ c = a ⊕ (b ⊕ c)`
+2. **e is both left and right identity**: `e ⊕ x = x ⊕ e = x`
+
 ```haskell
-loop' :: (b -> a -> b) -> b -> [a] -> b
+-- These are equal for any xs:
+foldr (+) 0 xs = foldl (+) 0 xs    -- (+) associative, 0 is identity
+foldr (*) 1 xs = foldl (*) 1 xs    -- (*) associative, 1 is identity
+
+-- These are NOT equal in general:
+foldr (-) 0 xs ≠ foldl (-) 0 xs    -- (-) not associative
+foldr (++) [] xs ≠ foldl (++) [] xs -- subtle: equal on finite lists but differ on ⊥
+```
+
+### Which to use when?
+
+| Situation | Use | Reason |
+|-----------|-----|--------|
+| Building a list (e.g. `map`, `filter`) | `foldr` | works on infinite lists; lazy |
+| Reducing to a number/bool (e.g. `sum`) | `foldl'` | avoids thunk build-up |
+| Need the original list order preserved | `foldr` | visits left-to-right naturally |
+| Computing `reverse` | `foldl` | natural left-to-right accumulation |
+| Infinite list input | `foldr` only | `foldl` will loop forever |
+
+```haskell
+-- foldr can work on infinite lists because it is lazy:
+foldr (\x _ -> x) undefined [1,2,3..] = 1    -- stops after first step
+
+-- foldl CANNOT work on infinite lists:
+foldl (+) 0 [1..] = ⊥   -- never terminates
+```
+
+### Examples using foldl
+
+```haskell
+-- reverse: naturally left-associative
+reverse = foldl (flip (:)) []
+-- foldl (flip (:)) [] [1,2,3]
+-- = foldl (flip (:)) [1] [2,3]
+-- = foldl (flip (:)) [2,1] [3]
+-- = foldl (flip (:)) [3,2,1] []
+-- = [3,2,1]  ✓
+
+-- Running total (left scan result):
+foldl (+) 0 [1,2,3,4] = 10   -- same as sum
+
+-- Building a string backwards:
+foldl (\acc c -> c:acc) [] "hello" = "olleh"
+```
+
+### Space behaviour
+
+`foldl` builds a chain of unevaluated thunks:
+```
+foldl (+) 0 [1,2,3]
+→ foldl (+) (0+1) [2,3]           -- thunk: (0+1)
+→ foldl (+) ((0+1)+2) [3]         -- thunk: ((0+1)+2)
+→ foldl (+) (((0+1)+2)+3) []      -- thunk: (((0+1)+2)+3)
+→ evaluate: 6                     -- forced at the end
+```
+
+Use **`foldl'`** (strict left fold) to force evaluation at each step:
+```haskell
+import Data.List (foldl')
+
+foldl' (+) 0 [1,2,3]              -- evaluates accumulator eagerly: no thunk build-up
+-- = foldl' (+) 1 [2,3]
+-- = foldl' (+) 3 [3]
+-- = foldl' (+) 6 []
+-- = 6                            -- O(1) space vs O(n) for foldl
+
+-- The course calls this loop':
 loop' s (!n) []     = n
 loop' s (!n) (x:xs) = loop' s (s n x) xs
--- or use foldl' from Data.List
 ```
-For `sum` on large lists, `loop' (+) 0` avoids stack overflow.
+
+### Summary table
+
+| | `foldr f z` | `foldl f z` | `foldl' f z` |
+|--|-------------|-------------|--------------|
+| Associativity | right `x⊕(y⊕z)` | left `(x⊕y)⊕z` | left `(x⊕y)⊕z` |
+| Processes | right-to-left | left-to-right | left-to-right |
+| Works on infinite lists | yes (if f lazy) | no | no |
+| Space (numeric reduction) | O(n) thunks | O(n) thunks | O(1) |
+| Course name | `fold` | `loop` | `loop'` |
+| Haskell Prelude | `foldr` | `foldl` | `foldl'` (Data.List) |
 
 ---
 
-## 13. Scan
+## 13. Scan — scanr and scanl
 
-### Specification
-```haskell
-scan :: (a -> b -> b) -> b -> [a] -> [b]
-scan c n = map (fold c n) . tails
+### The big picture
+
+A **scan** is to a **fold** what intermediate steps are to a final answer. Instead of returning one result, it returns a list of all the partial results.
+
+```
+foldr (+) 0  [1, 2, 3]  =  6           -- single answer
+scanr (+) 0  [1, 2, 3]  =  [6, 5, 3, 0]  -- all suffix-fold results
 ```
 
+```
+foldl (+) 0  [1, 2, 3]  =  6           -- single answer
+scanl (+) 0  [1, 2, 3]  =  [0, 1, 3, 6]  -- all prefix-fold results
+```
+
+---
+
+### scanr — right scan (the course's "scan")
+
+**Specification**: apply `foldr` to every suffix (tail) of the list.
+
 ```haskell
+scanr :: (a -> b -> b) -> b -> [a] -> [b]
+scanr c n = map (foldr c n) . tails
+
 tails :: [a] -> [[a]]
 tails []     = [[]]
 tails (x:xs) = (x:xs) : tails xs
+
+-- tails [1,2,3] = [[1,2,3], [2,3], [3], []]
 ```
 
-So for `scan c n [x,y,z]`:
+So:
 ```
-= [fold c n [x,y,z], fold c n [y,z], fold c n [z], fold c n []]
-= [x `c` (y `c` (z `c` n)),  y `c` (z `c` n),  z `c` n,  n]
+scanr c n [x,y,z]
+= map (foldr c n) [[x,y,z], [y,z], [z], []]
+= [x`c`(y`c`(z`c`n)),  y`c`(z`c`n),  z`c`n,  n]
 ```
 
-**Example**: `scan (+) 0 [1,2,3] = [6, 5, 3, 0]`  
-(trailing sums: 1+2+3=6, 2+3=5, 3=3, 0)
-
-**Standard Haskell**: `scanr = scan` (right scan); `scanl` is the left variant.
-
-**Naive implementation** is quadratic: ~½n² applications of `c`.
-
-### Efficient implementation via fold fusion
+**Concrete examples:**
 ```haskell
--- Step 1: tails as a fold
--- tails = fold g [[]] where g x yss = (x : head yss) : yss
+scanr (+) 0 [1,2,3]   = [6, 5, 3, 0]
+-- 1+(2+(3+0))=6,  2+(3+0)=5,  3+0=3,  0
 
--- Step 2: fuse map (fold c n) with the tails fold
-scan c n = fold h [n]
+scanr (*) 1 [1,2,3,4] = [24, 24, 12, 4, 1]
+-- 1*2*3*4=24, 2*3*4=24, 3*4=12, 4*1=4, 1
+
+scanr (:) [] [1,2,3]  = [[1,2,3],[2,3],[3],[]]
+-- same as tails!
+
+scanr max 0 [3,1,4,1,5] = [5,5,5,5,5,0]
+-- suffix maxima
+
+scanr (-) 0 [1,2,3]   = [2, -1, 3, 0]
+-- 1-(2-(3-0))=1-(-1)=2,  2-(3-0)=2-3=-1,  3-0=3,  0
+```
+
+**Key property:**
+```haskell
+head (scanr c n xs) = foldr c n xs
+-- The FIRST element is the fold of the whole list.
+last (scanr c n xs) = n
+-- The LAST element is always the initial value.
+```
+
+**Length:** `length (scanr c n xs) = length xs + 1`
+
+### Efficient scanr via fold fusion
+
+Naive implementation is O(n²) — computing each suffix fold separately.
+
+```haskell
+-- Specification (quadratic):
+scanr c n = map (foldr c n) . tails
+
+-- Efficient (linear) — derived by fold fusion:
+scanr c n = foldr h [n]
   where h x zs = c x (head zs) : zs
+-- At each step: prepend c x (next result), passing along previous results.
 ```
 
-This is **linear**: n applications of `h`, each calling `c` once.
+**Derivation intuition:**
+- The fold builds the result list from right to left.
+- When we process element `x` and the rest has already been scanned to `zs = [r1, r2, ...]`,
+  the new head is `c x r1` (since `r1 = foldr c n rest`).
 
-### Key property
-```haskell
-head (scan c n xs) = fold c n xs
--- The first element of the scan is the fold of the whole list.
-```
+---
 
-### scanl (left scan)
+### scanl — left scan
+
+**Specification**: apply `foldl` to every prefix (initial segment) of the list.
+
 ```haskell
 scanl :: (b -> a -> b) -> b -> [a] -> [b]
-scanl s n xs = map (loop s n) (inits xs)
-  where inits [] = [[]]
-        inits (x:xs) = [] : map (x:) (inits xs)
+scanl f z = map (foldl f z) . inits
 
--- scanl (+) 0 [1,2,3] = [0, 1, 3, 6]
--- (running totals from left)
+inits :: [a] -> [[a]]
+inits []     = [[]]
+inits (x:xs) = [] : map (x:) (inits xs)
+
+-- inits [1,2,3] = [[], [1], [1,2], [1,2,3]]
+```
+
+So:
+```
+scanl f z [x,y,z]
+= map (foldl f z) [[], [x], [x,y], [x,y,z]]
+= [z,  f z x,  f(f z x)y,  f(f(f z x)y)z]
+```
+
+**The first element is always the initial value `z`.**
+
+**Concrete examples:**
+```haskell
+scanl (+) 0 [1,2,3]   = [0, 1, 3, 6]
+-- 0,  0+1=1,  1+2=3,  3+3=6
+-- running totals, growing from left
+
+scanl (*) 1 [1,2,3,4] = [1, 1, 2, 6, 24]
+-- running products (factorials!)
+
+scanl (flip (:)) [] [1,2,3] = [[], [1], [2,1], [3,2,1]]
+-- shows how foldl builds reverse
+
+scanl (-) 0 [1,2,3]   = [0, -1, -3, -6]
+-- 0,  0-1=-1,  -1-2=-3,  -3-3=-6
+
+scanl max 0 [3,1,4,1,5] = [0, 3, 3, 4, 4, 5]
+-- running maximum
+```
+
+**Key property:**
+```haskell
+last (scanl f z xs) = foldl f z xs
+-- The LAST element is the fold of the whole list.
+head (scanl f z xs) = z
+-- The FIRST element is always the initial value.
+```
+
+**Efficient scanl** (already linear — no fusion needed):
+```haskell
+scanl f z []     = [z]
+scanl f z (x:xs) = z : scanl f (f z x) xs
+```
+
+---
+
+### scanr vs scanl — side-by-side comparison
+
+```
+List:       [1,   2,   3]   initial: 0
+
+scanr (+) 0: [6,   5,   3,   0]    -- suffix sums (right-to-left)
+              ^                ^
+           fold whole        initial
+
+scanl (+) 0: [0,   1,   3,   6]    -- prefix sums (left-to-right)
+              ^                ^
+           initial           fold whole
+```
+
+| | `scanr f z xs` | `scanl f z xs` |
+|--|----------------|----------------|
+| Corresponds to | `foldr` on suffixes | `foldl` on prefixes |
+| First element | `foldr f z xs` | `z` |
+| Last element | `z` | `foldl f z xs` |
+| Length | `length xs + 1` | `length xs + 1` |
+| Order of results | right-to-left partial results | left-to-right partial results |
+| Works on infinite lists | yes (lazy) | no (needs all of `xs`) |
+| Course name | `scan` | — |
+| Haskell Prelude | `scanr` | `scanl` |
+
+**When results are the same:** Only when `f` is associative, commutative, and `z` is the identity — e.g. `scanr (+) 0 xs` and `scanl (+) 0 xs` contain the same elements but in **reverse order**:
+```haskell
+scanr (+) 0 [1,2,3] = [6,5,3,0]
+scanl (+) 0 [1,2,3] = [0,3,5,6]
+-- same numbers, reversed!
+-- This holds because (+) is associative and commutative.
 ```
 
 ---
@@ -1495,32 +1723,184 @@ foldBush bush (Bush x ts) = bush x (fmap (foldBush bush) ts)
 
 ## 17. Functor and fmap
 
-A **Functor** is a type constructor `f` with a mapping operation that respects identity and composition.
+### The core intuition: a box you can map over
 
+A **Functor** is any type that acts like a **container** or **context** holding values of some type `a`, and lets you apply a function to those values without changing the structure of the container.
+
+Think of it as: *"apply a function to the contents; leave the box shape intact."*
+
+```
+                f :: a -> b
+              ────────────────
+  Maybe Int ──────fmap────────▶  Maybe String
+  Just 42                        Just "42"
+  Nothing                        Nothing         (box shape preserved)
+
+  [Int]     ──────fmap────────▶  [String]
+  [1,2,3]                        ["1","2","3"]   (list structure preserved)
+
+  RTree Int ──────fmap────────▶  RTree String
+  (same tree shape, values changed)
+```
+
+The type class:
 ```haskell
 class Functor f where
   fmap :: (a -> b) -> f a -> f b
--- Laws (required but not checked by Haskell):
--- fmap id      = id
--- fmap f . fmap g = fmap (f . g)
+--         ↑           ↑       ↑
+--     function    container  container
+--     to apply    of a's     of b's
 ```
 
-### Standard instances
+`f` here is **the container type** (`Maybe`, `[]`, `Either String`, …), not a plain function.
+
+---
+
+### The two Functor laws
+
+These say: *fmap should not touch the structure, and fmapping twice equals fmapping the composition.*
+
+```haskell
+-- Law 1: fmap id = id
+-- Applying the identity function changes nothing.
+fmap id (Just 5) = Just 5      ✓
+fmap id [1,2,3]  = [1,2,3]     ✓
+
+-- Law 2: fmap f . fmap g = fmap (f . g)
+-- Two fmaps in a row = one fmap of the composition.
+fmap (+1) (fmap (*2) (Just 3))  = Just 7
+fmap ((+1) . (*2)) (Just 3)     = Just 7   -- same result, one pass ✓
+```
+
+Haskell does **not enforce** these laws — it is the programmer's responsibility.
+
+---
+
+### Standard instances, explained
+
+#### List — the obvious one
 ```haskell
 instance Functor [] where
-  fmap = map                     -- fmap on lists is map
+  fmap = map
 
+fmap (*2) [1,2,3] = [2,4,6]
+```
+`map` **is** `fmap` for lists. They are identical.
+
+#### Maybe — "might not be there"
+```haskell
 instance Functor Maybe where
   fmap f Nothing  = Nothing
   fmap f (Just x) = Just (f x)
+```
 
-instance Functor (Either a) where
-  fmap f (Left x)  = Left x     -- errors pass through
-  fmap f (Right y) = Right (f y)
+Rule: if the value is absent, it stays absent. If present, apply `f` to it.
 
+```haskell
+fmap (*2)     Nothing   = Nothing
+fmap (*2)     (Just 5)  = Just 10
+fmap show     (Just 42) = Just "42"
+fmap (++ "!") Nothing   = Nothing
+
+-- Practical use: safely transform a result that might have failed
+fmap (*10) (safeHead [1,2,3]) = Just 10
+fmap (*10) (safeHead [])      = Nothing   -- failure propagates
+```
+
+#### Either — "might be an error"
+```haskell
+instance Functor (Either e) where
+  fmap f (Left err) = Left err   -- error passes through unchanged
+  fmap f (Right x)  = Right (f x)
+```
+
+`fmap` only touches the `Right` (success) value. Errors (`Left`) are ignored — this is the short-circuit behaviour.
+
+```haskell
+fmap (*2) (Right 5)      = Right 10
+fmap (*2) (Left "oops")  = Left "oops"    -- error unchanged
+fmap show (Right 42)     = Right "42"
+
+-- Chain transformations; errors propagate automatically:
+fmap (*2) (fmap (+1) (Right 3))  = Right 8
+fmap (*2) (fmap (+1) (Left "x")) = Left "x"
+```
+
+#### RTree — "values in a tree"
+```haskell
 instance Functor RTree where
   fmap f (RTree a ts) = RTree (f a) (map (fmap f) ts)
+--                              ↑                ↑
+--                         apply f to root     recursively fmap subtrees
 ```
+
+The tree **shape** (branching) is preserved; every value at every node is transformed by `f`.
+
+```haskell
+-- Tree:       1
+--            / \
+--           2   3
+--                \
+--                 4
+
+fmap (*10) (RTree 1 [RTree 2 [], RTree 3 [RTree 4 []]])
+= RTree 10 [RTree 20 [], RTree 30 [RTree 40 []]]
+-- Tree:       10
+--            /  \
+--          20    30
+--                 \
+--                  40
+```
+
+---
+
+### Why `Either e` not `Either`?
+
+`fmap` has type `(a -> b) -> f a -> f b`, so `f` must take **exactly one** type argument. `Either` takes two:
+
+```
+Either   :: * -> * -> *    -- two type arguments
+Either e :: * -> *         -- partially applied: takes one argument
+```
+
+So `Functor (Either e)` makes `Either e` a functor in its **second** argument — that is why only `Right` is affected by `fmap`. The `Left e` part is the "fixed" structure.
+
+---
+
+### fmap derived from fold
+
+For any recursive type with a fold, `fmap` follows naturally — replace constructors with constructors that apply `f` to values:
+
+```haskell
+-- Lists:
+map f = foldr ((:) . f) []
+
+-- BTree:
+fmapBT :: (a -> b) -> BTree a -> BTree b
+fmapBT f = foldBTree (Leaf . f) Fork
+-- Leaves: apply f, re-wrap in Leaf. Forks: keep Fork unchanged.
+
+-- RTree:
+fmapRT :: (a -> b) -> RTree a -> RTree b
+fmapRT f = foldRTree (\x bs -> RTree (f x) bs)
+```
+
+---
+
+### The power: "lift any function into any context"
+
+```haskell
+double :: Int -> Int
+double = (*2)
+
+-- The same function works in any Functor:
+fmap double (Just 5)   = Just 10
+fmap double [1,2,3]    = [2,4,6]
+fmap double (Right 5)  = Right 10
+fmap double (Left "e") = Left "e"   -- no-op on error
+```
+
+Write `double` once; use it inside any container without rewriting it.
 
 ### map as a special case
 `map` is `fmap` for lists. For any recursive type, `fmap` can be derived from the fold:
@@ -1532,6 +1912,18 @@ fmapBT f = foldBTree (Leaf . f) Fork
 -- For RTree:
 fmapRT f = foldRTree (RTree . f) -- :: (a->b) -> RTree a -> RTree b
 ```
+
+### Summary
+
+| Container `f` | What `fmap f z` does |
+|---------------|----------------------|
+| `[]` | applies `f` to every element |
+| `Maybe` | applies `f` if `Just`, passes `Nothing` through |
+| `Either e` | applies `f` to `Right`, passes `Left` through |
+| `RTree` | applies `f` to every node value, keeps tree shape |
+| `Bush t` | applies `f` to every node value, keeps shape |
+
+**The Functor contract:** `fmap` reaches inside the container, applies your function to every `a`, and returns the same-shaped container full of `b`s.
 
 ---
 
